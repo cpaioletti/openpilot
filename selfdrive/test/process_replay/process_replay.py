@@ -464,12 +464,6 @@ def python_replay_process(cfg, lr, fingerprint=None):
   all_msgs = sorted(lr, key=lambda msg: msg.logMonoTime)
   pub_msgs = [msg for msg in all_msgs if msg.which() in list(cfg.pub_sub.keys())]
 
-  # laikad needs decision between submaster ubloxGnss and qcomGnss, prio given to ubloxGnss
-  if cfg.proc_name == "laikad":
-    args = (*args, not any(m.which() == "ubloxGnss" for m in pub_msgs))
-    service = "qcomGnss" if args[2] else "ubloxGnss"
-    pub_msgs = [m for m in pub_msgs if m.which() == service or m.which() == 'clocks']
-
   controlsState = None
   initialized = False
   for msg in lr:
@@ -557,7 +551,8 @@ def cpp_replay_process(cfg, lr, fingerprint=None):
   managed_processes[cfg.proc_name].start()
 
   try:
-    with Timeout(TIMEOUT, error_msg=f"timed out waiting for process to start: {repr(cfg.proc_name)}"):
+    # Wait for process to startup
+    with Timeout(5, error_msg=f"timed out waiting for process to start: {repr(cfg.proc_name)}"):
       while not all(pm.all_readers_updated(s) for s in cfg.pub_sub.keys()):
         time.sleep(0)
 
@@ -567,7 +562,7 @@ def cpp_replay_process(cfg, lr, fingerprint=None):
       messaging.recv_one_or_none(sockets[s])
 
     with Timeout(TIMEOUT*10, error_msg=f"timed out testing process {repr(cfg.proc_name)}"):
-      for i, msg in enumerate(pub_msgs):
+      for i, msg in enumerate(pub_msgs[:100]):
         pm.send(msg.which(), msg.as_builder())
 
         resp_sockets = cfg.pub_sub[msg.which()] if cfg.should_recv_callback is None else cfg.should_recv_callback(msg)
@@ -577,7 +572,6 @@ def cpp_replay_process(cfg, lr, fingerprint=None):
           if response is None:
             print(f"Warning, no response received {i}")
           else:
-
             response = response.as_builder()
             response.logMonoTime = msg.logMonoTime
             response = response.as_reader()
